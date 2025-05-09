@@ -1,0 +1,7 @@
+python-docx
+pdfminer.six
+Pillow
+click
+python-magic
+exif
+chardet

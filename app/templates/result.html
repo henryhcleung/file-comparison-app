@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comparison Result</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Comparison Result</h1>
+    <div id="result"></div>
+    <a href="{{ url_for('main.upload_files') }}">Compare More Files</a>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/result-data')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('result').innerHTML = `<p class="error">${escapeHtml(data.error)}</p>`;
+                } else {
+                    let resultHtml = `
+                        <h2>Comparison Summary:</h2>
+                        <p>File 1: ${escapeHtml(data.file1.name)} (${escapeHtml(data.file1.type)}, ${formatBytes(data.file1.size)})</p>
+                        <p>File 2: ${escapeHtml(data.file2.name)} (${escapeHtml(data.file2.type)}, ${formatBytes(data.file2.size)})</p>
+                        <p>Similarity: ${data.similarity}%</p>
+                        <p>Differences: ${data.differences}</p>
+                        <pre>${escapeHtml(data.detailedAnalysis)}</pre>
+                        <a href="/download/${encodeURIComponent(data.output_path.split('/').pop())}" download>Download Result</a>
+                    `;
+                    document.getElementById('result').innerHTML = resultHtml;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('result').innerHTML = '<p class="error">An error occurred while processing your request.</p>';
+            });
+        });
+
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        function escapeHtml(unsafe) {
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>

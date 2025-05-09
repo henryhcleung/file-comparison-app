@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Comparison Tool</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>File Comparison Tool</h1>
+        <p>Supported file types: txt, pdf, docx, png, jpg</p>
+        <form id="upload-form" method="post" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="file1">File 1:</label>
+                <input type="file" id="file1" name="files" required>
+                <div id="file1-status" class="upload-status"></div>
+            </div>
+            <div class="form-group">
+                <label for="file2">File 2:</label>
+                <input type="file" id="file2" name="files" required>
+                <div id="file2-status" class="upload-status"></div>
+            </div>
+            <button type="submit">Compare Files</button>
+            <button type="reset" id="reset-button">Reset</button>
+        </form>
+        <div id="loading" style="display: none;">Comparing files...</div>
+        <div id="results-section" style="display: none;">
+            <h2>Comparison Result</h2>
+            <div id="file-info"></div>
+            <div id="summary"></div>
+            <div id="comparison-result" class="comparison-container"></div>
+            <div id="detailed-analysis"></div>
+            <button id="toggle-rtf-view" style="display: none;">Toggle Detailed RTF View</button>
+            <a id="download-report" href="#" style="display: none;">Download Full Comparison Report</a>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('upload-form');
+        const fileInputs = ['file1', 'file2'];
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            clearResults();
+            const formData = new FormData(this);
+            document.getElementById('loading').style.display = 'block';
+
+            fetch('/', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('loading').style.display = 'none';
+                if (data.error) {
+                    document.getElementById('summary').innerHTML = `<p class="error">${data.error}</p>`;
+                } else {
+                    document.getElementById('results-section').style.display = 'block';
+                    displayFileInfo(data);
+                    displaySummary(data.summary);
+                    displayComparison(data.comparison);
+                    displayDetailedAnalysis(data.detailed_analysis);
+                    setupDownloadLink(data.output_path);
+                }
+            })
+            .catch(error => {
+                document.getElementById('loading').style.display = 'none';
+                console.error('Error:', error);
+                document.getElementById('summary').innerHTML = '<p class="error">An error occurred while processing your request. Please try again.</p>';
+            });
+        });
+
+        form.addEventListener('reset', clearFileStatuses);
+
+        fileInputs.forEach(fileId => {
+            document.getElementById(fileId).addEventListener('change', function(e) {
+                updateFileStatus(fileId, e.target.files[0]);
+            });
+        });
+
+        function updateFileStatus(fileId, file) {
+            const statusElement = document.getElementById(`${fileId}-status`);
+            if (file) {
+                statusElement.textContent = `File "${file.name}" selected successfully.`;
+                statusElement.className = 'upload-status success';
+            } else {
+                statusElement.textContent = 'No file selected.';
+                statusElement.className = 'upload-status error';
+            }
+        }
+
+        function clearFileStatuses() {
+            fileInputs.forEach(fileId => {
+                document.getElementById(`${fileId}-status`).textContent = '';
+            });
+            clearResults();
+        }
+
+        function clearResults() {
+            document.getElementById('summary').innerHTML = '';
+            document.getElementById('file-info').innerHTML = '';
+            document.getElementById('comparison-result').innerHTML = '';
+            document.getElementById('detailed-analysis').innerHTML = '';
+            document.getElementById('results-section').style.display = 'none';
+        }
+
+        function displayFileInfo(data) {
+            let fileInfoHtml = `
+                <h3>File Information:</h3>
+                <div class="file-details">
+                    <strong>File 1:</strong> ${data.file1.name} (${data.file1.type}, ${formatBytes(data.file1.size)})
+                </div>
+                <div class="file-details">
+                    <strong>File 2:</strong> ${data.file2.name} (${data.file2.type}, ${formatBytes(data.file2.size)})
+                </div>
+            `;
+            document.getElementById('file-info').innerHTML = fileInfoHtml;
+        }
+
+        function displaySummary(summary) {
+            let summaryHtml = `
+                <h3>Summary:</h3>
+                <ul>
+                    <li>Similarity: ${summary.similarity}</li>
+                    <li>Differences: ${summary.differences}</li>
+                    <li>Total Lines: ${summary.total_lines}</li>
+                    <li>File 1 Size: ${formatBytes(summary.file1_size)}</li>
+                    <li>File 2 Size: ${formatBytes(summary.file2_size)}</li>
+                    <li>File Type: ${summary.file_type}</li>
+                </ul>
+            `;
+            document.getElementById('summary').innerHTML = summaryHtml;
+        }
+
+        function displayComparison(comparison) {
+            const comparisonContainer = document.getElementById('comparison-result');
+            comparisonContainer.innerHTML = `
+                <table class="diff-table">
+                    <tr>
+                        <th>File 1</th>
+                        <th>File 2</th>
+                    </tr>
+            `;
+
+            comparison.forEach(item => {
+                const row = document.createElement('tr');
+                const cell1 = document.createElement('td');
+                const cell2 = document.createElement('td');
+
+                cell1.textContent = item.file1;
+                cell2.textContent = item.file2;
+
+                cell1.className = item.status === 'same' ? 'diff-same' : 'diff-different';
+                cell2.className = item.status === 'same' ? 'diff-same' : 'diff-different';
+
+                row.appendChild(cell1);
+                row.appendChild(cell2);
+                comparisonContainer.querySelector('.diff-table').appendChild(row);
+            });
+        }
+
+        function displayDetailedAnalysis(detailedAnalysis) {
+            let analysisHtml = `<h3>Detailed Analysis:</h3>`;
+            if (typeof detailedAnalysis === 'string') {
+                analysisHtml += `<p>${detailedAnalysis}</p>`;
+            } else if (Array.isArray(detailedAnalysis) && detailedAnalysis.length > 0) {
+                analysisHtml += `<div class="detailed-analysis">`;
+                detailedAnalysis.forEach(diff => {
+                    analysisHtml += `
+                        <div class="diff-item">
+                            <span class="line-number">Line ${diff.line}:</span>
+                            <div class="file1-content ${diff.file1 ? 'different' : ''}">${diff.file1 || '(No content)'}</div>
+                            <div class="file2-content ${diff.file2 ? 'different' : ''}">${diff.file2 || '(No content)'}</div>
+                        </div>
+                    `;
+                });
+                analysisHtml += '</div>';
+            } else {
+                analysisHtml += '<p>No differences found or files are identical.</p>';
+            }
+            document.getElementById('detailed-analysis').innerHTML = analysisHtml;
+        }
+        
+        function setupDownloadLink(outputPath) {
+            if (outputPath) {
+                const downloadLink = document.getElementById('download-report');
+                downloadLink.href = `/download/${outputPath.split('/').pop()}`;
+                downloadLink.style.display = 'block';
+            }
+        }
+
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+    </script>
+</body>
+</html>

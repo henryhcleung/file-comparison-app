@@ -1,0 +1,420 @@
+Same at line 1: [gpt-4o]
+Same at line 2: To ensure your file comparison tool is user-friendly, comprehensive, and meets your requirements, let's refine the application to provide detailed, clear, and actionable results. We'll focus on enhancing the user interface, improving the comparison logic, and ensuring the application is robust and easy to use.
+Same at line 3: 
+Same at line 4: ### Key Enhancements
+Same at line 5: 
+Same at line 6: 1. **Comprehensive File Support**: Ensure the application supports a wide range of file types, including text, PDF, Word documents, and images.
+Same at line 7: 2. **Detailed Comparison Results**: Provide clear and detailed comparison results, highlighting differences and similarities in a user-friendly format.
+Same at line 8: 3. **User-Friendly Interface**: Design the UI to be intuitive and easy to navigate, with clear instructions and feedback.
+Same at line 9: 4. **Robust Error Handling**: Implement comprehensive error handling to provide meaningful feedback to users in case of issues.
+Same at line 10: 5. **Command-Line Compatibility**: Ensure the application can be used both via a web interface and command line for flexibility.
+Same at line 11: 
+Same at line 12: ### Final Version of Key Files
+Same at line 13: 
+Same at line 14: #### `app/routes.py`
+Same at line 15: 
+Same at line 16: Ensure that the routes handle requests and responses effectively:
+Same at line 17: 
+Same at line 18: ```python
+Same at line 19: from flask import Blueprint, render_template, request, jsonify, current_app, send_file
+Same at line 20: import os
+Same at line 21: from app.services.file_service import save_file, get_file_info
+Same at line 22: from app.services.comparison_service import compare_files
+Same at line 23: import logging
+Same at line 24: 
+Same at line 25: logger = logging.getLogger(__name__)
+Same at line 26: main = Blueprint('main', __name__)
+Same at line 27: 
+Same at line 28: @main.route('/', methods=['GET', 'POST'])
+Same at line 29: def index():
+Same at line 30:     if request.method == 'POST':
+Same at line 31:         if 'files' not in request.files:
+Same at line 32:             return jsonify({'error': 'No file part'}), 400
+Same at line 33:         
+Same at line 34:         files = request.files.getlist('files')
+Same at line 35:         if len(files) != 2:
+Same at line 36:             return jsonify({'error': 'Please upload exactly two files.'}), 400
+Same at line 37: 
+Same at line 38:         try:
+Same at line 39:             file_paths = [save_file(file) for file in files]
+Same at line 40:             file_infos = [get_file_info(path) for path in file_paths]
+Same at line 41: 
+Same at line 42:             logger.debug(f"File infos: {file_infos}")
+Same at line 43: 
+Same at line 44:             output_folder = current_app.config['OUTPUT_FOLDER']
+Same at line 45:             comparison_result, output_path = compare_files(file_paths[0], file_paths[1], output_folder)
+Same at line 46: 
+Same at line 47:             if isinstance(comparison_result, dict) and 'error' in comparison_result:
+Same at line 48:                 return jsonify(comparison_result), 400
+Same at line 49: 
+Same at line 50:             response_data = {
+Same at line 51:                 'file1': file_infos[0],
+Same at line 52:                 'file2': file_infos[1],
+Same at line 53:                 'result': comparison_result.get('result', ''),
+Same at line 54:                 'summary': comparison_result.get('summary', ''),
+Same at line 55:                 'comparison': comparison_result.get('comparison', []),
+Same at line 56:                 'detailed_analysis': comparison_result.get('detailed_analysis', '')
+Same at line 57:             }
+Same at line 58: 
+Same at line 59:             if output_path:
+Same at line 60:                 response_data['output_path'] = os.path.basename(output_path)
+Same at line 61: 
+Same at line 62:             logger.debug(f"Response data: {response_data}")
+Same at line 63:             return jsonify(response_data)
+Same at line 64:         except Exception as e:
+Same at line 65:             logger.exception(f"Error processing files: {str(e)}")
+Same at line 66:             return jsonify({'error': f'An error occurred while processing files: {str(e)}'}), 500
+Same at line 67: 
+Same at line 68:     return render_template('index.html')
+Same at line 69: 
+Same at line 70: @main.route('/download/<filename>')
+Same at line 71: def download_file(filename):
+Same at line 72:     try:
+Same at line 73:         output_folder = current_app.config['OUTPUT_FOLDER']
+Same at line 74:         file_path = os.path.join(output_folder, filename)
+Same at line 75:         logger.debug(f"Attempting to download file from: {file_path}")
+Same at line 76:         
+Same at line 77:         if not os.path.exists(file_path):
+Same at line 78:             logger.error(f"File not found: {file_path}")
+Same at line 79:             return jsonify({'error': 'File not found'}), 404
+Same at line 80:         
+Same at line 81:         return send_file(file_path, as_attachment=True)
+Same at line 82:     except Exception as e:
+Same at line 83:         logger.error(f"Error downloading file: {str(e)}")
+Same at line 84:         return jsonify({'error': f'An error occurred while downloading the file: {str(e)}'}), 500
+Same at line 85: ```
+Same at line 86: 
+Same at line 87: #### `app/services/comparison_service.py`
+Same at line 88: 
+Same at line 89: Enhance the comparison logic to provide detailed analysis and summary:
+Same at line 90: 
+Same at line 91: ```python
+Same at line 92: import os
+Same at line 93: from PIL import Image
+Same at line 94: import imagehash
+Same at line 95: import difflib
+Same at line 96: import magic
+Same at line 97: import docx2txt
+Same at line 98: import PyPDF2
+Same at line 99: import logging
+Same at line 100: 
+Same at line 101: logging.basicConfig(level=logging.DEBUG)
+Same at line 102: logger = logging.getLogger(__name__)
+Same at line 103: 
+Same at line 104: def compare_files(file1_path, file2_path, output_folder):
+Same at line 105:     try:
+Same at line 106:         file_type1 = get_file_type(file1_path)
+Same at line 107:         file_type2 = get_file_type(file2_path)
+Same at line 108: 
+Same at line 109:         logger.debug(f"File types: {file_type1}, {file_type2}")
+Same at line 110: 
+Same at line 111:         if file_type1 != file_type2:
+Same at line 112:             return {"error": f"Files are of different types: {file_type1} vs {file_type2}"}, None
+Same at line 113: 
+Same at line 114:         if 'pdf' in file_type1.lower():
+Same at line 115:             return compare_pdf_files(file1_path, file2_path, output_folder)
+Same at line 116:         elif 'text' in file_type1 or file_type1 in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
+Same at line 117:             return compare_text_files(file1_path, file2_path, output_folder, file_type1)
+Same at line 118:         elif 'image' in file_type1:
+Same at line 119:             return compare_image_files(file1_path, file2_path, output_folder)
+Same at line 120:         else:
+Same at line 121:             return {"error": f"Comparison not supported for file type: {file_type1}"}, None
+Same at line 122:     except Exception as e:
+Same at line 123:         logger.exception("Error in compare_files")
+Same at line 124:         return {"error": f"An error occurred while comparing files: {str(e)}"}, None
+Same at line 125: 
+Same at line 126: def compare_pdf_files(file1_path, file2_path, output_folder):
+Same at line 127:     try:
+Same at line 128:         text1 = extract_text_from_pdf(file1_path)
+Same at line 129:         text2 = extract_text_from_pdf(file2_path)
+Same at line 130:         return compare_text_content(text1, text2, output_folder)
+Same at line 131:     except Exception as e:
+Same at line 132:         logger.exception("Error in compare_pdf_files")
+Same at line 133:         return {"error": f"An error occurred while comparing PDF files: {str(e)}"}, None
+Same at line 134: 
+Same at line 135: def compare_text_content(text1, text2, output_folder):
+Same at line 136:     diff = difflib.ndiff(text1.splitlines(), text2.splitlines())
+Same at line 137:     result = []
+Same at line 138:     comparison = []
+Same at line 139:     differences = 0
+Same at line 140: 
+Same at line 141:     for i, s in enumerate(diff):
+Same at line 142:         if s.startswith('  '):
+Same at line 143:             result.append(f"Same at line {i}: {s[2:]}")
+Same at line 144:             comparison.append({"status": "same", "file1": s[2:], "file2": s[2:]})
+Same at line 145:         elif s.startswith('- '):
+Same at line 146:             result.append(f"File1 at line {i}: {s[2:]}")
+Same at line 147:             comparison.append({"status": "different", "file1": s[2:], "file2": ""})
+Same at line 148:             differences += 1
+Same at line 149:         elif s.startswith('+ '):
+Same at line 150:             result.append(f"File2 at line {i}: {s[2:]}")
+Same at line 151:             comparison.append({"status": "different", "file1": "", "file2": s[2:]})
+Same at line 152:             differences += 1
+Same at line 153: 
+Same at line 154:     similarity = (len(text1.splitlines()) - differences) / len(text1.splitlines()) * 100
+Same at line 155:     summary = f"Files are {similarity:.2f}% identical\n{differences} difference(s) found"
+Same at line 156: 
+Same at line 157:     detailed_analysis = f"The files differ in {differences} places."
+Same at line 158: 
+Same at line 159:     result_text = "\n".join(result)
+Same at line 160:     
+Same at line 161:     output_path = os.path.join(output_folder, "comparison_result.txt")
+Same at line 162:     with open(output_path, 'w') as f:
+Same at line 163:         f.write(result_text)
+Same at line 164: 
+Same at line 165:     return {"result": result_text, "comparison": comparison, "summary": summary, "detailed_analysis": detailed_analysis}, output_path
+Same at line 166: 
+Same at line 167: def get_file_type(file_path):
+Same at line 168:     mime = magic.Magic(mime=True)
+Same at line 169:     return mime.from_file(file_path)
+Same at line 170: 
+Same at line 171: def compare_text_files(file1_path, file2_path, output_folder, file_type):
+Same at line 172:     try:
+Same at line 173:         text1 = extract_text(file1_path, file_type)
+Same at line 174:         text2 = extract_text(file2_path, file_type)
+Same at line 175:         return compare_text_content(text1, text2, output_folder)
+Same at line 176:     except Exception as e:
+Same at line 177:         logger.exception("Error in compare_text_files")
+Same at line 178:         return {"error": f"An error occurred while comparing text files: {str(e)}"}, None
+Same at line 179: 
+Same at line 180: def extract_text(file_path, file_type):
+Same at line 181:     if file_type == 'application/pdf':
+Same at line 182:         return extract_text_from_pdf(file_path)
+Same at line 183:     elif file_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+Same at line 184:         return docx2txt.process(file_path)
+Same at line 185:     else:
+Same at line 186:         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+Same at line 187:             return f.read()
+Same at line 188: 
+Same at line 189: def compare_image_files(file1_path, file2_path, output_folder):
+Same at line 190:     img1 = Image.open(file1_path)
+Same at line 191:     img2 = Image.open(file2_path)
+Same at line 192: 
+Same at line 193:     hash1 = imagehash.average_hash(img1)
+Same at line 194:     hash2 = imagehash.average_hash(img2)
+Same at line 195: 
+Same at line 196:     similarity = 1 - (hash1 - hash2) / len(hash1.hash) ** 2
+Same at line 197:     
+Same at line 198:     result = f"Image similarity: {similarity:.2%}\n"
+Same at line 199:     result += f"Image 1 dimensions: {img1.size}\n"
+Same at line 200:     result += f"Image 2 dimensions: {img2.size}\n"
+Same at line 201:     
+Same at line 202:     if img1.size != img2.size:
+Same at line 203:         result += "Images have different dimensions\n"
+Same at line 204:     
+Same at line 205:     if img1.mode != img2.mode:
+Same at line 206:         result += f"Images have different color modes: {img1.mode} vs {img2.mode}\n"
+Same at line 207:     
+Same at line 208:     output_path = os.path.join(output_folder, "comparison_result.txt")
+Same at line 209:     with open(output_path, 'w') as f:
+Same at line 210:         f.write(result)
+Same at line 211: 
+Same at line 212:     summary = f"Image similarity: {similarity:.2%}"
+Same at line 213:     detailed_analysis = "Images have different dimensions or color modes."
+Same at line 214: 
+Same at line 215:     return {"result": result, "summary": summary, "comparison": [], "detailed_analysis": detailed_analysis}, output_path
+Same at line 216: 
+Same at line 217: def extract_text_from_pdf(pdf_path):
+Same at line 218:     try:
+Same at line 219:         with open(pdf_path, 'rb') as file:
+Same at line 220:             reader = PyPDF2.PdfReader(file)
+Same at line 221:             text = ''
+Same at line 222:             for page in reader.pages:
+Same at line 223:                 text += page.extract_text()
+Same at line 224:         return text
+Same at line 225:     except Exception as e:
+Same at line 226:         logger.exception(f"Error extracting text from PDF: {pdf_path}")
+Same at line 227:         raise
+Same at line 228: ```
+Same at line 229: 
+Same at line 230: #### `app/templates/index.html`
+Same at line 231: 
+Same at line 232: Ensure your HTML template is correctly set up to display results:
+Same at line 233: 
+Same at line 234: ```html
+Same at line 235: <!DOCTYPE html>
+Same at line 236: <html lang="en">
+Same at line 237: <head>
+Same at line 238:     <meta charset="UTF-8">
+Same at line 239:     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+Same at line 240:     <title>File Comparison Tool</title>
+Same at line 241:     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+Same at line 242: </head>
+Same at line 243: <body>
+Same at line 244:     <div class="container">
+Same at line 245:         <h1>File Comparison Tool</h1>
+Same at line 246:         <p>Supported file types: txt, pdf, docx, png, jpg</p>
+Same at line 247:         <form id="upload-form" method="post" enctype="multipart/form-data">
+Same at line 248:             <div class="form-group">
+Same at line 249:                 <label for="file1">File 1:</label>
+Same at line 250:                 <input type="file" id="file1" name="files" required>
+Same at line 251:                 <div id="file1-status" class="upload-status"></div>
+Same at line 252:             </div>
+Same at line 253:             <div class="form-group">
+Same at line 254:                 <label for="file2">File 2:</label>
+Same at line 255:                 <input type="file" id="file2" name="files" required>
+Same at line 256:                 <div id="file2-status" class="upload-status"></div>
+Same at line 257:             </div>
+Same at line 258:             <button type="submit">Compare Files</button>
+Same at line 259:             <button type="reset" id="reset-button">Reset</button>
+Same at line 260:         </form>
+Same at line 261:         <div id="loading" style="display: none;">Comparing files...</div>
+Same at line 262:         <div id="results-section" style="display: none;">
+Same at line 263:             <h2>Comparison Result</h2>
+Same at line 264:             <div id="file-info"></div>
+Same at line 265:             <div id="summary"></div>
+Same at line 266:             <div id="comparison-result" class="comparison-container"></div>
+Same at line 267:             <div id="detailed-analysis"></div>
+Same at line 268:             <button id="toggle-rtf-view" style="display: none;">Toggle Detailed RTF View</button>
+Same at line 269:             <a id="download-report" href="#" style="display: none;">Download Full Comparison Report</a>
+Same at line 270:         </div>
+Same at line 271:     </div>
+Same at line 272: 
+Same at line 273:     <script>
+Same at line 274:         const form = document.getElementById('upload-form');
+Same at line 275:         const fileInputs = ['file1', 'file2'];
+Same at line 276: 
+Same at line 277:         form.addEventListener('submit', function(e) {
+Same at line 278:             e.preventDefault();
+Same at line 279:             const formData = new FormData(this);
+Same at line 280:             document.getElementById('loading').style.display = 'block';
+Same at line 281:             document.getElementById('results-section').style.display = 'none';
+Same at line 282: 
+Same at line 283:             fetch('/', {
+Same at line 284:                 method: 'POST',
+Same at line 285:                 body: formData
+Same at line 286:             })
+Same at line 287:             .then(response => response.json())
+Same at line 288:             .then(data => {
+Same at line 289:                 document.getElementById('loading').style.display = 'none';
+Same at line 290:                 document.getElementById('results-section').style.display = 'block';
+Same at line 291:                 if (data.error) {
+Same at line 292:                     document.getElementById('summary').innerHTML = `<p class="error">${data.error}</p>`;
+Same at line 293:                 } else {
+Same at line 294:                     displayFileInfo(data);
+Same at line 295:                     displaySummary(data.summary);
+Same at line 296:                     displayComparison(data.comparison);
+Same at line 297:                     displayDetailedAnalysis(data.detailed_analysis);
+Same at line 298:                     setupDownloadLink(data.output_path);
+Same at line 299:                 }
+Same at line 300:             })
+Same at line 301:             .catch(error => {
+Same at line 302:                 document.getElementById('loading').style.display = 'none';
+Same at line 303:                 console.error('Error:', error);
+Same at line 304:                 document.getElementById('summary').innerHTML = '<p class="error">An error occurred while processing your request. Please try again.</p>';
+Same at line 305:             });
+Same at line 306:         });
+Same at line 307: 
+Same at line 308:         form.addEventListener('reset', clearFileStatuses);
+Same at line 309: 
+Same at line 310:         fileInputs.forEach(fileId => {
+Same at line 311:             document.getElementById(fileId).addEventListener('change', function(e) {
+Same at line 312:                 updateFileStatus(fileId, e.target.files[0]);
+Same at line 313:             });
+Same at line 314:         });
+Same at line 315: 
+Same at line 316:         function updateFileStatus(fileId, file) {
+Same at line 317:             const statusElement = document.getElementById(`${fileId}-status`);
+Same at line 318:             if (file) {
+Same at line 319:                 statusElement.textContent = `File "${file.name}" selected successfully.`;
+Same at line 320:                 statusElement.className = 'upload-status success';
+Same at line 321:             } else {
+Same at line 322:                 statusElement.textContent = 'No file selected.';
+Same at line 323:                 statusElement.className = 'upload-status error';
+Same at line 324:             }
+Same at line 325:         }
+Same at line 326: 
+Same at line 327:         function clearFileStatuses() {
+Same at line 328:             fileInputs.forEach(fileId => {
+Same at line 329:                 document.getElementById(`${fileId}-status`).textContent = '';
+Same at line 330:             });
+Same at line 331:             document.getElementById('summary').innerHTML = '';
+Same at line 332:             document.getElementById('file-info').innerHTML = '';
+Same at line 333:             document.getElementById('comparison-result').innerHTML = '';
+Same at line 334:             document.getElementById('detailed-analysis').innerHTML = '';
+Same at line 335:         }
+Same at line 336: 
+Same at line 337:         function displayFileInfo(data) {
+Same at line 338:             let fileInfoHtml = `
+Same at line 339:                 <h3>File Information:</h3>
+Same at line 340:                 <div class="file-details">
+Same at line 341:                     <strong>File 1:</strong> ${data.file1.name} (${data.file1.type}, ${formatBytes(data.file1.size)})
+Same at line 342:                 </div>
+Same at line 343:                 <div class="file-details">
+Same at line 344:                     <strong>File 2:</strong> ${data.file2.name} (${data.file2.type}, ${formatBytes(data.file2.size)})
+Same at line 345:                 </div>
+Same at line 346:             `;
+Same at line 347:             document.getElementById('file-info').innerHTML = fileInfoHtml;
+Same at line 348:         }
+Same at line 349: 
+Same at line 350:         function displaySummary(summary) {
+Same at line 351:             let summaryHtml = `
+Same at line 352:                 <h3>Summary:</h3>
+Same at line 353:                 <p>${summary}</p>
+Same at line 354:             `;
+Same at line 355:             document.getElementById('summary').innerHTML = summaryHtml;
+Same at line 356:         }
+Same at line 357: 
+Same at line 358:         function displayComparison(comparison) {
+Same at line 359:             const comparisonContainer = document.getElementById('comparison-result');
+Same at line 360:             comparisonContainer.innerHTML = `
+Same at line 361:                 <table class="diff-table">
+Same at line 362:                     <tr>
+Same at line 363:                         <th>File 1</th>
+Same at line 364:                         <th>File 2</th>
+Same at line 365:                     </tr>
+Same at line 366:             `;
+Same at line 367: 
+Same at line 368:             comparison.forEach(item => {
+Same at line 369:                 const row = document.createElement('tr');
+Same at line 370:                 const cell1 = document.createElement('td');
+Same at line 371:                 const cell2 = document.createElement('td');
+Same at line 372: 
+Same at line 373:                 cell1.textContent = item.file1;
+Same at line 374:                 cell2.textContent = item.file2;
+Same at line 375: 
+Same at line 376:                 cell1.className = item.status === 'same' ? 'diff-same' : 'diff-different';
+Same at line 377:                 cell2.className = item.status === 'same' ? 'diff-same' : 'diff-different';
+Same at line 378: 
+Same at line 379:                 row.appendChild(cell1);
+Same at line 380:                 row.appendChild(cell2);
+Same at line 381:                 comparisonContainer.querySelector('.diff-table').appendChild(row);
+Same at line 382:             });
+Same at line 383:         }
+Same at line 384: 
+Same at line 385:         function displayDetailedAnalysis(detailedAnalysis) {
+Same at line 386:             let analysisHtml = `
+Same at line 387:                 <h3>Detailed Analysis:</h3>
+Same at line 388:                 <p>${detailedAnalysis}</p>
+Same at line 389:             `;
+Same at line 390:             document.getElementById('detailed-analysis').innerHTML = analysisHtml;
+Same at line 391:         }
+Same at line 392: 
+Same at line 393:         function setupDownloadLink(outputPath) {
+Same at line 394:             if (outputPath) {
+Same at line 395:                 const downloadLink = document.getElementById('download-report');
+Same at line 396:                 downloadLink.href = `/download/${outputPath.split('/').pop()}`;
+Same at line 397:                 downloadLink.style.display = 'block';
+Same at line 398:             }
+Same at line 399:         }
+Same at line 400: 
+Same at line 401:         function formatBytes(bytes, decimals = 2) {
+Same at line 402:             if (bytes === 0) return '0 Bytes';
+Same at line 403:             const k = 1024;
+Same at line 404:             const dm = decimals < 0 ? 0 : decimals;
+Same at line 405:             const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+Same at line 406:             const i = Math.floor(Math.log(bytes) / Math.log(k));
+Same at line 407:             return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+Same at line 408:         }
+Same at line 409:     </script>
+Same at line 410: </body>
+Same at line 411: </html>
+Same at line 412: ```
+Same at line 413: 
+Same at line 414: ### Final Steps
+Same at line 415: 
+Same at line 416: - **Ensure Dependencies**: Make sure all necessary Python packages are installed, such as `Pillow`, `imagehash`, `python-magic`, `docx2txt`, and `PyPDF2`.
+Same at line 417: - **Test the Application**: Run the application and test file uploads and comparisons to ensure everything works as expected.
+Same at line 418: - **Logging**: Use logging to trace the flow of your application and identify any further issues.
+Same at line 419: 
+Same at line 420: By following these steps and using the provided code, you should have a fully functional file comparison application that meets your requirements. If you continue to experience issues, check the logs for additional clues and ensure that all paths and configurations are correctly set.
